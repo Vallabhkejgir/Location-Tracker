@@ -13,16 +13,17 @@ from twilio.rest import Client
 
 load_dotenv()
 
-try:
-    TWILIO_ACCOUNT_SID = os.getenv("TWILIO_ACCOUNT_SID")
-    TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN")
-    TWILIO_PHONE_NUMBER = os.getenv("TWILIO_PHONE_NUMBER","")
-    MY_PHONE_NUMBER = os.getenv("MY_PHONE_NUMBER","")
-except Exception as e:
-    print("Error loading environment variables:", e)
-    raise
+TWILIO_ACCOUNT_SID = os.getenv("TWILIO_ACCOUNT_SID")
+TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN")
+TWILIO_PHONE_NUMBER = os.getenv("TWILIO_PHONE_NUMBER", "")
+MY_PHONE_NUMBER = os.getenv("MY_PHONE_NUMBER", "")
 
-twilio_client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
+if TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN:
+    twilio_client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
+    print("Twilio client initialized successfully")
+else:
+    twilio_client = None
+    print("Warning: Twilio credentials not found. Calls will not work.")
 
 
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
@@ -31,12 +32,19 @@ current_coords: dict[str, float | None] = {"lat": None, "lng": None}
 
 # call function
 def make_twilio_call():
-    call = twilio_client.calls.create(
-        to=MY_PHONE_NUMBER,
-        from_=TWILIO_PHONE_NUMBER,
-        url="https://handler.twilio.com/twiml/EH717d0e56cd5b9578b06f3f7446f15a46"
-    )
-    print("Call SID:", call.sid)
+    if not twilio_client:
+        print("Error: Twilio client not configured. Check environment variables.")
+        return
+    
+    try:
+        call = twilio_client.calls.create(
+            to=MY_PHONE_NUMBER,
+            from_=TWILIO_PHONE_NUMBER,
+            url="https://handler.twilio.com/twiml/EH717d0e56cd5b9578b06f3f7446f15a46"
+        )
+        print("Call SID:", call.sid)
+    except Exception as e:
+        print(f"Error making Twilio call: {e}")
 # distance computation function
 
 def compute_distance(coord1, coord2) -> bool:
