@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Location Notifier</title>
+<style>
+body {
+    font-family: Arial, sans-serif;
+    max-width: 600px;
+    margin: 50px auto;
+    padding: 20px;
+}
+
+.container {
+    border: 1px solid #ddd;
+    padding: 30px;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+h1 {
+    text-align: center;
+    color: #333;
+}
+
+.form-group {
+    margin-bottom: 20px;
+}
+
+label {
+    display: block;
+    margin-bottom: 8px;
+    font-weight: bold;
+    color: #555;
+}
+
+input[type="text"] {
+    width: 100%;
+    padding: 10px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    font-size: 16px;
+    box-sizing: border-box;
+}
+
+.autocomplete-container {
+    position: relative;
+}
+
+.autocomplete-list {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    background: white;
+    border: 1px solid #ccc;
+    border-top: none;
+    border-radius: 0 0 4px 4px;
+    max-height: 200px;
+    overflow-y: auto;
+    z-index: 1000;
+    display: none;
+}
+
+.autocomplete-item {
+    padding: 10px;
+    cursor: pointer;
+    border-bottom: 1px solid #eee;
+}
+
+.autocomplete-item:hover {
+    background-color: #f0f0f0;
+}
+
+.autocomplete-item:last-child {
+    border-bottom: none;
+}
+
+button {
+    width: 100%;
+    padding: 12px;
+    background-color: #007bff;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    font-size: 16px;
+    cursor: pointer;
+    transition: background-color 0.3s;
+    margin-bottom: 10px;
+}
+
+button:hover {
+    background-color: #0056b3;
+}
+
+button:disabled {
+    background-color: #6c757d;
+    cursor: not-allowed;
+    opacity: 0.6;
+}
+
+.btn-secondary {
+    background-color: #28a745;
+}
+
+.btn-secondary:hover {
+    background-color: #218838;
+}
+
+.btn-danger {
+    background-color: #dc3545;
+}
+
+.btn-danger:hover {
+    background-color: #c82333;
+}
+
+.tracking-status {
+    margin-top: 10px;
+    padding: 10px;
+    background-color: #d4edda;
+    border: 1px solid #c3e6cb;
+    border-radius: 4px;
+    display: none;
+    text-align: center;
+    color: #155724;
+}
+
+.location-info {
+    margin-top: 20px;
+    padding: 15px;
+    background-color: #f8f9fa;
+    border-radius: 4px;
+    display: none;
+}
+
+.location-info p {
+    margin: 5px 0;
+    color: #333;
+}
+</style>
+</head>
+
+<body>
+<div class="container">
+<h1>Location Notifier</h1>
+
+<div class="form-group">
+<label for="locationInput">Enter Destination Location:</label>
+<div class="autocomplete-container">
+<input type="text" id="locationInput" placeholder="Start typing location name...">
+<div class="autocomplete-list" id="autocompleteList"></div>
+</div>
+</div>
+
+<button id="getLocationButton" class="btn-secondary">Get My Location</button>
+<button id="startTrackingButton" class="btn-secondary">Start Location Tracking</button>
+<button id="stopTrackingButton" class="btn-danger" style="display:none;">Stop Location Tracking</button>
+
+<div class="tracking-status" id="trackingStatus">Location tracking active - sending every 30 seconds</div>
+
+<div class="location-info" id="locationInfo">
+<p><strong>Your Current Location:</strong></p>
+<p>Latitude: <span id="latitude">-</span></p>
+<p>Longitude: <span id="longitude">-</span></p>
+</div>
+
+</div>
+
+<script>
+let locationInterval = null;
+
+async function sendLocationToBackend(latitude, longitude) {
+    try {
+        const response = await fetch('http://localhost:8008/api/track_location', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                latitude: latitude,
+                longitude: longitude,
+                timestamp: new Date().toISOString()
+            })
+        });
+
+        const data = await response.json();
+        if (data.status === 'alert') {
+            alert(data.message);
+            stopLocationTracking();
+        }
+
+        console.log('Location sent:', data);
+    } catch (error) {
+        console.error('Error sending location:', error);
+    }
+}
+
+function startLocationTracking() {
+    if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition((position) => {
+            sendLocationToBackend(position.coords.latitude, position.coords.longitude);
+        });
+
+        locationInterval = setInterval(() => {
+            navigator.geolocation.getCurrentPosition((position) => {
+                sendLocationToBackend(position.coords.latitude, position.coords.longitude);
+            }, (error) => {
+                console.error('Error getting location:', error);
+            });
+        }, 30000);
+
+        document.getElementById('startTrackingButton').style.display = 'none';
+        document.getElementById('stopTrackingButton').style.display = 'block';
+        document.getElementById('trackingStatus').style.display = 'block';
+    } else {
+        alert('Geolocation is not supported by this browser.');
+    }
+}
+
+function stopLocationTracking() {
+    if (locationInterval) {
+        clearInterval(locationInterval);
+        locationInterval = null;
+        document.getElementById('startTrackingButton').style.display = 'block';
+        document.getElementById('stopTrackingButton').style.display = 'none';
+        document.getElementById('trackingStatus').style.display = 'none';
+    }
+}
+
+document.getElementById('startTrackingButton').addEventListener('click', startLocationTracking);
+document.getElementById('stopTrackingButton').addEventListener('click', stopLocationTracking);
+
+let debounceTimer;
+const locationInput = document.getElementById('locationInput');
+const autocompleteList = document.getElementById('autocompleteList');
+
+locationInput.addEventListener('input', function() {
+    clearTimeout(debounceTimer);
+    const query = this.value.trim();
+
+    if (query.length < 2) {
+        autocompleteList.style.display = 'none';
+        return;
+    }
+
+    debounceTimer = setTimeout(async () => {
+        try {
+            const response = await fetch('http://localhost:8008/api/autocomplete_location', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ location_name: query })
+            });
+
+            if (response.status === 200) {
+                const data = await response.json();
+                const predictions = data.predictions || [];
+
+                autocompleteList.innerHTML = '';
+                predictions.forEach(prediction => {
+                    const div = document.createElement('div');
+                    div.className = 'autocomplete-item';
+                    div.textContent = prediction.description;
+                    div.dataset.placeId = prediction.place_id;
+
+                    div.addEventListener('click', async function() {
+                        locationInput.value = this.textContent;
+                        autocompleteList.style.display = 'none';
+                        await setDestination(this.dataset.placeId);
+                    });
+
+                    autocompleteList.appendChild(div);
+                });
+
+                autocompleteList.style.display = predictions.length ? 'block' : 'none';
+            }
+        } catch (error) {
+            console.error('Error fetching autocomplete:', error);
+        }
+    }, 2000);
+});
+
+document.addEventListener('click', function(e) {
+    if (!e.target.closest('.autocomplete-container')) {
+        autocompleteList.style.display = 'none';
+    }
+});
+
+async function setDestination(placeId) {
+    try {
+        const response = await fetch('http://localhost:8008/api/set_destination', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ place_id: placeId })
+        });
+
+        if (response.status === 200) {
+            const data = await response.json();
+            alert('Destination set successfully!\n' +
+                'Coordinates: ' + data.destination_coordinates.lat + ', ' +
+                data.destination_coordinates.lng + '\n\n' +
+                'Location tracking started automatically.');
+            startLocationTracking();
+        } else {
+            alert('Failed to set destination.');
+        }
+    } catch (error) {
+        console.error('Error:', error);
+        alert('An error occurred while setting destination.');
+    }
+}
+
+document.getElementById('getLocationButton').addEventListener('click', () => {
+    if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(
+            (position) => {
+                const lat = position.coords.latitude;
+                const lon = position.coords.longitude;
+
+                document.getElementById('latitude').textContent = lat.toFixed(6);
+                document.getElementById('longitude').textContent = lon.toFixed(6);
+                document.getElementById('locationInfo').style.display = 'block';
+                console.log('User location:', { lat, lon });
+            },
+            (error) => {
+                let errorMessage = "Unable to get location.";
+                switch(error.code) {
+                    case error.PERMISSION_DENIED:
+                        errorMessage = "Location permission denied. Please enable location access in your browser.";
+                        break;
+                    case error.POSITION_UNAVAILABLE:
+                        errorMessage = "Location information unavailable.";
+                        break;
+                    case error.TIMEOUT:
+                        errorMessage = "Location request timed out.";
+                        break;
+                }
+                alert(errorMessage);
+                console.error('Geolocation error:', error);
+            }
+        );
+    } else {
+        alert('Geolocation is not supported by your browser.');
+    }
+});
+</script>
+</body>
+</html>
