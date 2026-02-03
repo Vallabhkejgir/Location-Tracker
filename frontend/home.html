@@ -220,20 +220,17 @@
 
       async function sendLocationToBackend(latitude, longitude) {
         try {
-          const response = await fetch(
-            "http://localhost:8008/api/track_location",
-            {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-              },
-              body: JSON.stringify({
-                latitude: latitude,
-                longitude: longitude,
-                timestamp: new Date().toISOString(),
-              }),
+          const response = await fetch("/api/track_location", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
             },
-          );
+            body: JSON.stringify({
+              latitude: latitude,
+              longitude: longitude,
+              timestamp: new Date().toISOString(),
+            }),
+          });
 
           const data = await response.json();
           if (data.status === "alert") {
@@ -309,16 +306,13 @@
         }
 
         try {
-          const response = await fetch(
-            "http://localhost:8008/api/autocomplete_location",
-            {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-              },
-              body: JSON.stringify({ location_name: query }),
+          const response = await fetch("/api/autocomplete_location", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
             },
-          );
+            body: JSON.stringify({ location_name: query }),
+          });
 
           if (response.status === 200) {
             const data = await response.json();
@@ -379,16 +373,13 @@
 
       async function setDestination(placeId) {
         try {
-          const response = await fetch(
-            "http://localhost:8008/api/set_destination",
-            {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-              },
-              body: JSON.stringify({ place_id: placeId }),
+          const response = await fetch("/api/set_destination", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
             },
-          );
+            body: JSON.stringify({ place_id: placeId }),
+          });
 
           if (response.status === 200) {
             const data = await response.json();
