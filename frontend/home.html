@@ -66,7 +66,7 @@
       .search-button {
         flex: 0 0 15%;
         padding: 10px 8px;
-        background-color: #007bff;
+        background-color: #d2dc20;
         color: white;
         border: 1px solid #007bff;
         border-radius: 4px;
@@ -221,15 +221,16 @@
           const data = await response.json();
           const remainingMs = data.remaining_seconds * 1000;
 
-          console.log(`Logged in as: ${data.username}. Expiration in ${data.remaining_seconds}s`);
+          console.log(
+            `Logged in as: ${data.username}. Expiration in ${data.remaining_seconds}s`,
+          );
 
           if (autoLogoutTimer) clearTimeout(autoLogoutTimer);
-          
+
           autoLogoutTimer = setTimeout(() => {
             alert("Your session has expired. Please log in again.");
             window.location.href = "/static/login.html";
           }, remainingMs);
-
         } catch (error) {
           console.error("Session check failed:", error);
           window.location.href = "/static/login.html";
@@ -248,10 +249,12 @@
       }
 
       // 3. LOGOUT BUTTON
-      document.getElementById("logoutButton").addEventListener("click", async () => {
-        await fetch("/api/logout", { method: "POST" });
-        window.location.href = "/static/login.html";
-      });
+      document
+        .getElementById("logoutButton")
+        .addEventListener("click", async () => {
+          await fetch("/api/logout", { method: "POST" });
+          window.location.href = "/static/login.html";
+        });
 
       // 4. LOCATION TRACKING
       async function sendLocationToBackend(latitude, longitude) {
@@ -281,13 +284,20 @@
       function startLocationTracking() {
         if (navigator.geolocation) {
           navigator.geolocation.getCurrentPosition((position) => {
-            sendLocationToBackend(position.coords.latitude, position.coords.longitude);
+            sendLocationToBackend(
+              position.coords.latitude,
+              position.coords.longitude,
+            );
           });
 
           locationInterval = setInterval(() => {
             navigator.geolocation.getCurrentPosition(
-              (position) => sendLocationToBackend(position.coords.latitude, position.coords.longitude),
-              (err) => console.error("Geolocation error:", err)
+              (position) =>
+                sendLocationToBackend(
+                  position.coords.latitude,
+                  position.coords.longitude,
+                ),
+              (err) => console.error("Geolocation error:", err),
             );
           }, 30000);
 
@@ -303,7 +313,8 @@
         if (locationInterval) {
           clearInterval(locationInterval);
           locationInterval = null;
-          document.getElementById("startTrackingButton").style.display = "block";
+          document.getElementById("startTrackingButton").style.display =
+            "block";
           document.getElementById("stopTrackingButton").style.display = "none";
           document.getElementById("trackingStatus").style.display = "none";
         }
@@ -338,7 +349,9 @@
             };
             autocompleteList.appendChild(div);
           });
-          autocompleteList.style.display = predictions.length ? "block" : "none";
+          autocompleteList.style.display = predictions.length
+            ? "block"
+            : "none";
         } catch (error) {
           console.error("Autocomplete error:", error);
         }
@@ -363,15 +376,20 @@
       }
 
       // EVENT LISTENERS
-      document.getElementById("startTrackingButton").onclick = startLocationTracking;
-      document.getElementById("stopTrackingButton").onclick = stopLocationTracking;
-      document.getElementById("searchButton").onclick = () => performAutocompleteSearch(locationInput.value.trim());
+      document.getElementById("startTrackingButton").onclick =
+        startLocationTracking;
+      document.getElementById("stopTrackingButton").onclick =
+        stopLocationTracking;
+      document.getElementById("searchButton").onclick = () =>
+        performAutocompleteSearch(locationInput.value.trim());
 
       document.getElementById("getLocationButton").onclick = () => {
         if (navigator.geolocation) {
           navigator.geolocation.getCurrentPosition((pos) => {
-            document.getElementById("latitude").textContent = pos.coords.latitude.toFixed(6);
-            document.getElementById("longitude").textContent = pos.coords.longitude.toFixed(6);
+            document.getElementById("latitude").textContent =
+              pos.coords.latitude.toFixed(6);
+            document.getElementById("longitude").textContent =
+              pos.coords.longitude.toFixed(6);
             document.getElementById("locationInfo").style.display = "block";
           });
         }
