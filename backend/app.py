@@ -1,5 +1,5 @@
 from pathlib import Path
-from fastapi import FastAPI, APIRouter
+from fastapi import FastAPI, APIRouter, HTTPException, Depends, Cookie, Response
 from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -8,177 +8,150 @@ import uvicorn
 from dotenv import load_dotenv
 import os
 import requests
+import time
+import uuid
 from twilio.rest import Client
-
 
 load_dotenv()
 
-try:
-    TWILIO_ACCOUNT_SID = os.getenv("TWILIO_ACCOUNT_SID")
-    TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN")
-    TWILIO_PHONE_NUMBER = os.getenv("TWILIO_PHONE_NUMBER","")
-    MY_PHONE_NUMBER = os.getenv("MY_PHONE_NUMBER","")
-except Exception as e:
-    print("Error loading environment variables:", e)
-    raise
-
-twilio_client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
-
-
+# Configuration
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
+TWILIO_ACCOUNT_SID = os.getenv("TWILIO_ACCOUNT_SID")
+TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN")
+TWILIO_PHONE_NUMBER = os.getenv("TWILIO_PHONE_NUMBER", "")
+MY_PHONE_NUMBER = os.getenv("MY_PHONE_NUMBER", "")
+
+# Session Constants (in seconds)
+DEFAULT_TIMEOUT = 300      # 5 minutes
+SPECIAL_TIMEOUT = 7200     # 2 hours for "jollypolly"
+
+# In-memory session store: {session_id: {"username": str, "expires_at": float}}
+sessions = {}
+
+if TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN:
+    twilio_client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
+else:
+    twilio_client = None
+
 destination_coords: dict[str, float | None] = {"lat": None, "lng": None}
 current_coords: dict[str, float | None] = {"lat": None, "lng": None}
 
-# call function
+# --- Helper Functions ---
+
 def make_twilio_call():
-    call = twilio_client.calls.create(
-        to=MY_PHONE_NUMBER,
-        from_=TWILIO_PHONE_NUMBER,
-        url="https://handler.twilio.com/twiml/EH717d0e56cd5b9578b06f3f7446f15a46"
-    )
-    print("Call SID:", call.sid)
-# distance computation function
+    if not twilio_client: return
+    try:
+        twilio_client.calls.create(
+            to=MY_PHONE_NUMBER,
+            from_=TWILIO_PHONE_NUMBER,
+            url="https://handler.twilio.com/twiml/EH717d0e56cd5b9578b06f3f7446f15a46"
+        )
+    except Exception as e:
+        print(f"Twilio error: {e}")
 
 def compute_distance(coord1, coord2) -> bool:
-    if None in coord1.values() or None in coord2.values():
-        print("One or both coordinates are None")
-        return False
-
-    print(f"Computing distance between {coord1} and {coord2}")
+    if None in coord1.values() or None in coord2.values(): return False
     from geopy.distance import geodesic
     distance = geodesic((coord1['lat'], coord1['lng']), (coord2['lat'], coord2['lng'])).meters
-    print(f"Computed distance: {distance} meters")
-    if distance <= 2000:
-        return True
-    return False
+    return distance <= 2000
+
+# Dependency to check if the session is valid
+def verify_session(session_id: str = Cookie(None)):
+    if not session_id or session_id not in sessions:
+        raise HTTPException(status_code=401, detail="Session expired or invalid")
+    
+    session_data = sessions[session_id]
+    if time.time() > session_data["expires_at"]:
+        if session_id in sessions: del sessions[session_id]
+        raise HTTPException(status_code=401, detail="Session expired")
+    
+    return session_data["username"]
+
+# --- Router & Endpoints ---
 
 router = APIRouter()
 
-class LocationRequest(BaseModel):
-    location_name: str
+class LoginRequest(BaseModel):
+    username: str
+    password: str
 
-class LocationTrackingRequest(BaseModel):
-    latitude: float
-    longitude: float
-    timestamp: str
+@router.post("/login")
+def login(data: LoginRequest, response: Response):
+    if len(data.username) < 5:
+        raise HTTPException(status_code=400, detail="Username too short")
+    if data.password != data.username[::-1]:
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+    
+    session_id = str(uuid.uuid4())
+    timeout = SPECIAL_TIMEOUT if data.username == "jollypolly" else DEFAULT_TIMEOUT
+    expires_at = time.time() + timeout
+    
+    sessions[session_id] = {"username": data.username, "expires_at": expires_at}
+    
+    # Set session cookie
+    response.set_cookie(key="session_id", value=session_id, httponly=True, samesite="lax")
+    return {"status": "success", "username": data.username}
 
-class destinationRequest(BaseModel):
-    place_id: str
+# NEW: Endpoint to get remaining session time
+@router.get("/session_info")
+def get_session_info(session_id: str = Cookie(None)):
+    if not session_id or session_id not in sessions:
+        raise HTTPException(status_code=401)
+    
+    session_data = sessions[session_id]
+    remaining = session_data["expires_at"] - time.time()
+    
+    if remaining <= 0:
+        del sessions[session_id]
+        raise HTTPException(status_code=401)
+        
+    return {"username": session_data["username"], "remaining_seconds": remaining}
 
-
-@router.get("/")
-def read_root():
-    return {"Hello": "Jolly"}
-
+@router.post("/logout")
+def logout(response: Response, session_id: str = Cookie(None)):
+    if session_id in sessions:
+        del sessions[session_id]
+    response.delete_cookie("session_id")
+    return {"status": "success"}
 
 @router.post("/set_destination")
-def set_destination(data: destinationRequest):
-    body = {
-        "place_id": data.place_id,
-        "key": GOOGLE_API_KEY,
-    }
-
+def set_destination(data: dict, user: str = Depends(verify_session)):
+    body = {"place_id": data.get("place_id"), "key": GOOGLE_API_KEY}
     try:
-        response = requests.get(
-            "https://maps.googleapis.com/maps/api/place/details/json",
-            params=body,
-            verify=False
-        )
-        result = response.json()
-        location = result['result']['geometry']['location']
-        destination_coords['lat'] = location['lat']
-        destination_coords['lng'] = location['lng']
-    except Exception as e:
-        return JSONResponse(content={"error": str(e)}, status_code=500)
-
-    return JSONResponse(content={
-        "status": "success",
-        "destination_coordinates": destination_coords
-    })
-
+        res = requests.get("https://maps.googleapis.com/maps/api/place/details/json", params=body).json()
+        loc = res['result']['geometry']['location']
+        destination_coords.update({"lat": loc['lat'], "lng": loc['lng']})
+        return {"status": "success", "destination_coordinates": destination_coords}
+    except:
+        raise HTTPException(status_code=500, detail="Map error")
 
 @router.post("/autocomplete_location")
-def autocomplete_location(data: LocationRequest):
-    body = {
-        "input": data.location_name,
-        "components": "country:in",
-        "key": GOOGLE_API_KEY
-    }
-    try:
-        print(body)
-        response = requests.get(
-            "https://maps.googleapis.com/maps/api/place/autocomplete/json",
-            params=body
-            # verify=False
-        )
-        result = response.json()
-        print(f"Autocomplete result: {result}") 
-    
-    except Exception as e:
-        return JSONResponse(content={"error": str(e)}, status_code=500)
-
-    return JSONResponse(content=result)
-
+def autocomplete_location(data: dict, user: str = Depends(verify_session)):
+    body = {"input": data.get("location_name"), "components": "country:in", "key": GOOGLE_API_KEY}
+    res = requests.get("https://maps.googleapis.com/maps/api/place/autocomplete/json", params=body).json()
+    return res
 
 @router.post("/track_location")
-def track_location(data: LocationTrackingRequest):
-    print(f"Received location: Lat {data.latitude}, Lon {data.longitude} at {data.timestamp}")
-    current_coords['lat'] = data.latitude
-    current_coords['lng'] = data.longitude
-
+def track_location(data: dict, user: str = Depends(verify_session)):
+    current_coords.update({"lat": data.get("latitude"), "lng": data.get("longitude")})
     if compute_distance(current_coords, destination_coords):
         make_twilio_call()
-        return JSONResponse(content={
-            "status": "alert",
-            "message": "You have arrived within 2 km of your destination! Calling you now..."
-        })
+        return {"status": "alert", "message": "Arrived! Calling now..."}
+    return {"status": "success"}
 
+# --- App Setup ---
 
-    return JSONResponse(content={
-        "status": "success",
-        "message": "Location received",
-        "data": {
-            "latitude": data.latitude,
-            "longitude": data.longitude,
-            "timestamp": data.timestamp
-        }
-    })
-
-
-app = FastAPI(
-    title="Location-based Notifier API",
-    description="API for Location-based Notifier Application",
-    version="0.1.0"
-)
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-# app.mount("/static", StaticFiles(directory="../frontend"), name="static")
+app = FastAPI()
+app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 
 BASE_DIR = Path(__file__).resolve().parent.parent
-FRONTEND_DIR = BASE_DIR / "frontend"
-
-app.mount("/static", StaticFiles(directory=FRONTEND_DIR), name="static")
-
-
-
+app.mount("/static", StaticFiles(directory=BASE_DIR / "frontend"), name="static")
 
 @app.get("/")
-def redirect_to_home():
-    return RedirectResponse(url="/static/home.html")
+def root():
+    return RedirectResponse(url="/static/login.html")
 
-
-app.include_router(router, prefix="/api", tags=["Location-based Notifier"])
+app.include_router(router, prefix="/api")
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="localhost", port=8008)
-    print("Server started at http://localhost:8008")
-
-
-# syntax=docker/dockerfile:1
+    uvicorn.run(app, host="0.0.0.0", port=8008)
