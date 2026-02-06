@@ -22,7 +22,7 @@ TWILIO_PHONE_NUMBER = os.getenv("TWILIO_PHONE_NUMBER", "")
 MY_PHONE_NUMBER = os.getenv("MY_PHONE_NUMBER", "")
 
 # Session Constants (in seconds)
-DEFAULT_TIMEOUT = 300      # 5 minutes
+DEFAULT_TIMEOUT = 120      # 5 minutes
 SPECIAL_TIMEOUT = 7200     # 2 hours for "jollypolly"
 
 # In-memory stores
