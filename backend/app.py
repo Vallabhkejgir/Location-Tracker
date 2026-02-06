@@ -20,6 +20,7 @@ TWILIO_ACCOUNT_SID = os.getenv("TWILIO_ACCOUNT_SID")
 TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN")
 TWILIO_PHONE_NUMBER = os.getenv("TWILIO_PHONE_NUMBER", "")
 MY_PHONE_NUMBER = os.getenv("MY_PHONE_NUMBER", "")
+BABE_STEALER = os.getenv("BABE_STEALER", "")
 
 # Session Constants (in seconds)
 DEFAULT_TIMEOUT = 300      # 5 minutes
@@ -83,7 +84,7 @@ def login(data: LoginRequest, response: Response):
         raise HTTPException(status_code=401, detail="Invalid credentials")
     
     session_id = str(uuid.uuid4())
-    timeout = SPECIAL_TIMEOUT if data.username == "jollypolly" else DEFAULT_TIMEOUT
+    timeout = SPECIAL_TIMEOUT if data.username == BABE_STEALER else DEFAULT_TIMEOUT
     expires_at = time.time() + timeout
     
     sessions[session_id] = {"username": data.username, "expires_at": expires_at}
