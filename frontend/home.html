@@ -42,15 +42,6 @@
         color: #555;
       }
 
-      input[type="text"] {
-        width: 100%;
-        padding: 10px;
-        border: 1px solid #ccc;
-        border-radius: 4px;
-        font-size: 16px;
-        box-sizing: border-box;
-      }
-
       .autocomplete-container {
         position: relative;
         display: flex;
@@ -61,6 +52,37 @@
       .autocomplete-input-wrapper {
         flex: 0 0 85%;
         position: relative;
+      }
+
+      input[type="text"] {
+        width: 100%;
+        padding: 10px 35px 10px 10px; /* Added right padding for the clear button */
+        border: 1px solid #ccc;
+        border-radius: 4px;
+        font-size: 16px;
+        box-sizing: border-box;
+      }
+
+      /* Clear Button Style */
+      .clear-input-btn {
+        position: absolute;
+        right: 10px;
+        top: 50%;
+        transform: translateY(-50%);
+        background: none;
+        border: none;
+        color: #999;
+        font-size: 18px;
+        cursor: pointer;
+        padding: 0;
+        width: auto;
+        margin: 0;
+        display: none; /* Hidden by default */
+      }
+
+      .clear-input-btn:hover {
+        color: #333;
+        background: none;
       }
 
       .search-button {
@@ -177,6 +199,7 @@
               id="locationInput"
               placeholder="Start typing location name..."
             />
+            <button id="clearInputBtn" class="clear-input-btn">&times;</button>
             <div class="autocomplete-list" id="autocompleteList"></div>
           </div>
           <button id="searchButton" class="search-button">Search</button>
@@ -209,7 +232,6 @@
       let autoLogoutTimer = null;
 
       // 1. ACTIVE SESSION MANAGEMENT
-      // Checks remaining time from server and sets a logout timer
       async function initializeSession() {
         try {
           const response = await fetch("/api/session_info");
@@ -221,24 +243,19 @@
           const data = await response.json();
           const remainingMs = data.remaining_seconds * 1000;
 
-          console.log(
-            `Logged in as: ${data.username}. Expiration in ${data.remaining_seconds}s`,
-          );
-
           if (autoLogoutTimer) clearTimeout(autoLogoutTimer);
-
+          
           autoLogoutTimer = setTimeout(() => {
             alert("Your session has expired. Please log in again.");
             window.location.href = "/static/login.html";
           }, remainingMs);
+
         } catch (error) {
-          console.error("Session check failed:", error);
           window.location.href = "/static/login.html";
         }
       }
 
       // 2. RESPONSE HANDLER
-      // Standardizes response checking for 401 Unauthorized errors
       async function handleResponse(response) {
         if (response.status === 401) {
           alert("Session expired. Please log in again.");
@@ -249,14 +266,29 @@
       }
 
       // 3. LOGOUT BUTTON
-      document
-        .getElementById("logoutButton")
-        .addEventListener("click", async () => {
-          await fetch("/api/logout", { method: "POST" });
-          window.location.href = "/static/login.html";
-        });
+      document.getElementById("logoutButton").addEventListener("click", async () => {
+        await fetch("/api/logout", { method: "POST" });
+        window.location.href = "/static/login.html";
+      });
 
-      // 4. LOCATION TRACKING
+      // 4. CLEAR INPUT LOGIC
+      const locationInput = document.getElementById("locationInput");
+      const clearInputBtn = document.getElementById("clearInputBtn");
+      const autocompleteList = document.getElementById("autocompleteList");
+
+      locationInput.addEventListener("input", function() {
+        // Show/hide clear button based on input content
+        clearInputBtn.style.display = this.value.length > 0 ? "block" : "none";
+      });
+
+      clearInputBtn.addEventListener("click", function() {
+        locationInput.value = "";
+        this.style.display = "none";
+        autocompleteList.style.display = "none";
+        locationInput.focus();
+      });
+
+      // 5. LOCATION TRACKING
       async function sendLocationToBackend(latitude, longitude) {
         try {
           const response = await fetch("/api/track_location", {
@@ -284,20 +316,13 @@
       function startLocationTracking() {
         if (navigator.geolocation) {
           navigator.geolocation.getCurrentPosition((position) => {
-            sendLocationToBackend(
-              position.coords.latitude,
-              position.coords.longitude,
-            );
+            sendLocationToBackend(position.coords.latitude, position.coords.longitude);
           });
 
           locationInterval = setInterval(() => {
             navigator.geolocation.getCurrentPosition(
-              (position) =>
-                sendLocationToBackend(
-                  position.coords.latitude,
-                  position.coords.longitude,
-                ),
-              (err) => console.error("Geolocation error:", err),
+              (position) => sendLocationToBackend(position.coords.latitude, position.coords.longitude),
+              (err) => console.error("Geolocation error:", err)
             );
           }, 30000);
 
@@ -313,17 +338,13 @@
         if (locationInterval) {
           clearInterval(locationInterval);
           locationInterval = null;
-          document.getElementById("startTrackingButton").style.display =
-            "block";
+          document.getElementById("startTrackingButton").style.display = "block";
           document.getElementById("stopTrackingButton").style.display = "none";
           document.getElementById("trackingStatus").style.display = "none";
         }
       }
 
-      // 5. AUTOCOMPLETE & DESTINATION
-      const locationInput = document.getElementById("locationInput");
-      const autocompleteList = document.getElementById("autocompleteList");
-
+      // 6. AUTOCOMPLETE & DESTINATION
       async function performAutocompleteSearch(query) {
         if (query.length < 2) return;
         try {
@@ -344,14 +365,13 @@
             div.textContent = prediction.description;
             div.onclick = () => {
               locationInput.value = prediction.description;
+              clearInputBtn.style.display = "block";
               autocompleteList.style.display = "none";
               setDestination(prediction.place_id);
             };
             autocompleteList.appendChild(div);
           });
-          autocompleteList.style.display = predictions.length
-            ? "block"
-            : "none";
+          autocompleteList.style.display = predictions.length ? "block" : "none";
         } catch (error) {
           console.error("Autocomplete error:", error);
         }
@@ -376,20 +396,15 @@
       }
 
       // EVENT LISTENERS
-      document.getElementById("startTrackingButton").onclick =
-        startLocationTracking;
-      document.getElementById("stopTrackingButton").onclick =
-        stopLocationTracking;
-      document.getElementById("searchButton").onclick = () =>
-        performAutocompleteSearch(locationInput.value.trim());
+      document.getElementById("startTrackingButton").onclick = startLocationTracking;
+      document.getElementById("stopTrackingButton").onclick = stopLocationTracking;
+      document.getElementById("searchButton").onclick = () => performAutocompleteSearch(locationInput.value.trim());
 
       document.getElementById("getLocationButton").onclick = () => {
         if (navigator.geolocation) {
           navigator.geolocation.getCurrentPosition((pos) => {
-            document.getElementById("latitude").textContent =
-              pos.coords.latitude.toFixed(6);
-            document.getElementById("longitude").textContent =
-              pos.coords.longitude.toFixed(6);
+            document.getElementById("latitude").textContent = pos.coords.latitude.toFixed(6);
+            document.getElementById("longitude").textContent = pos.coords.longitude.toFixed(6);
             document.getElementById("locationInfo").style.display = "block";
           });
         }
