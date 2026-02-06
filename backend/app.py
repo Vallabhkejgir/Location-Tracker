@@ -1,5 +1,5 @@
 from pathlib import Path
-from fastapi import FastAPI, APIRouter, HTTPException, Depends, Cookie, Response
+from fastapi import FastAPI, APIRouter, HTTPException, Depends, Cookie, Response, status
 from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -25,8 +25,9 @@ MY_PHONE_NUMBER = os.getenv("MY_PHONE_NUMBER", "")
 DEFAULT_TIMEOUT = 300      # 5 minutes
 SPECIAL_TIMEOUT = 7200     # 2 hours for "jollypolly"
 
-# In-memory session store: {session_id: {"username": str, "expires_at": float}}
-sessions = {}
+# In-memory stores
+sessions = {} # {session_id: {"username": str, "expires_at": float}}
+last_set_destination_time = {} # {session_id: float}
 
 if TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN:
     twilio_client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
@@ -55,7 +56,6 @@ def compute_distance(coord1, coord2) -> bool:
     distance = geodesic((coord1['lat'], coord1['lng']), (coord2['lat'], coord2['lng'])).meters
     return distance <= 2000
 
-# Dependency to check if the session is valid
 def verify_session(session_id: str = Cookie(None)):
     if not session_id or session_id not in sessions:
         raise HTTPException(status_code=401, detail="Session expired or invalid")
@@ -87,49 +87,64 @@ def login(data: LoginRequest, response: Response):
     expires_at = time.time() + timeout
     
     sessions[session_id] = {"username": data.username, "expires_at": expires_at}
-    
-    # Set session cookie
     response.set_cookie(key="session_id", value=session_id, httponly=True, samesite="lax")
     return {"status": "success", "username": data.username}
 
-# NEW: Endpoint to get remaining session time
 @router.get("/session_info")
 def get_session_info(session_id: str = Cookie(None)):
     if not session_id or session_id not in sessions:
         raise HTTPException(status_code=401)
-    
     session_data = sessions[session_id]
     remaining = session_data["expires_at"] - time.time()
-    
     if remaining <= 0:
         del sessions[session_id]
         raise HTTPException(status_code=401)
-        
     return {"username": session_data["username"], "remaining_seconds": remaining}
 
 @router.post("/logout")
 def logout(response: Response, session_id: str = Cookie(None)):
-    if session_id in sessions:
-        del sessions[session_id]
+    if session_id in sessions: del sessions[session_id]
+    if session_id in last_set_destination_time: del last_set_destination_time[session_id]
     response.delete_cookie("session_id")
     return {"status": "success"}
 
 @router.post("/set_destination")
-def set_destination(data: dict, user: str = Depends(verify_session)):
+def set_destination(data: dict, session_id: str = Cookie(None), user: str = Depends(verify_session)):
+    # 2nd Feature: Rate Limiting (1 request per second)
+    current_time = time.time()
+    last_time = last_set_destination_time.get(session_id, 0)
+    
+    if current_time - last_time < 1.0:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS, 
+            detail="Only one request per second is allowed."
+        )
+    
+    last_set_destination_time[session_id] = current_time
+
+    # Original destination logic
     body = {"place_id": data.get("place_id"), "key": GOOGLE_API_KEY}
     try:
         res = requests.get("https://maps.googleapis.com/maps/api/place/details/json", params=body).json()
         loc = res['result']['geometry']['location']
         destination_coords.update({"lat": loc['lat'], "lng": loc['lng']})
         return {"status": "success", "destination_coordinates": destination_coords}
-    except:
-        raise HTTPException(status_code=500, detail="Map error")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/autocomplete_location")
 def autocomplete_location(data: dict, user: str = Depends(verify_session)):
-    body = {"input": data.get("location_name"), "components": "country:in", "key": GOOGLE_API_KEY}
-    res = requests.get("https://maps.googleapis.com/maps/api/place/autocomplete/json", params=body).json()
-    return res
+    # 1st Feature: Autocomplete Logic
+    body = {
+        "input": data.get("location_name"), 
+        "components": "country:in", 
+        "key": GOOGLE_API_KEY
+    }
+    try:
+        res = requests.get("https://maps.googleapis.com/maps/api/place/autocomplete/json", params=body).json()
+        return res
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/track_location")
 def track_location(data: dict, user: str = Depends(verify_session)):
@@ -139,17 +154,13 @@ def track_location(data: dict, user: str = Depends(verify_session)):
         return {"status": "alert", "message": "Arrived! Calling now..."}
     return {"status": "success"}
 
-# --- App Setup ---
-
 app = FastAPI()
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
-
 BASE_DIR = Path(__file__).resolve().parent.parent
 app.mount("/static", StaticFiles(directory=BASE_DIR / "frontend"), name="static")
 
 @app.get("/")
-def root():
-    return RedirectResponse(url="/static/login.html")
+def root(): return RedirectResponse(url="/static/login.html")
 
 app.include_router(router, prefix="/api")
 
