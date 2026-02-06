@@ -11,7 +11,6 @@
         padding: 20px;
         background-color: #f4f7f6;
       }
-
       .container {
         background: white;
         border: 1px solid #ddd;
@@ -19,22 +18,18 @@
         border-radius: 8px;
         box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
       }
-
       .header-actions {
         display: flex;
         justify-content: flex-end;
         margin-bottom: 10px;
       }
-
       h1 {
         text-align: center;
         color: #333;
       }
-
       .form-group {
         margin-bottom: 20px;
       }
-
       label {
         display: block;
         margin-bottom: 8px;
@@ -48,10 +43,34 @@
         gap: 8px;
         width: 100%;
       }
-
       .autocomplete-input-wrapper {
         flex: 0 0 85%;
         position: relative;
+      }
+      input[type="text"] {
+        width: 100%;
+        padding: 10px 40px 10px 12px; /* Right padding increased to 40px */
+        border: 1px solid #ccc;
+        border-radius: 4px;
+        font-size: 16px;
+        box-sizing: border-box;
+      }
+      /* Update this section in your home.html */
+      .clear-input-btn {
+        position: absolute;
+        right: 12px; /* Moves it to the right-most edge */
+        top: 50%;
+        transform: translateY(-50%);
+        background: none;
+        border: none;
+        color: #999;
+        font-size: 20px; /* Slightly larger for better visibility */
+        cursor: pointer;
+        padding: 5px; /* Creates a larger clickable area */
+        width: auto;
+        margin: 0;
+        display: none;
+        z-index: 2; /* Ensures it stays above the input text */
       }
 
       input[type="text"] {
@@ -90,13 +109,9 @@
         padding: 10px 8px;
         background-color: #007bff;
         color: white;
-        border: 1px solid #007bff;
         border-radius: 4px;
-        font-size: 14px;
         cursor: pointer;
-        transition: background-color 0.3s;
       }
-
       .autocomplete-list {
         position: absolute;
         top: 100%;
@@ -104,24 +119,19 @@
         right: 0;
         background: white;
         border: 1px solid #ccc;
-        border-top: none;
-        border-radius: 0 0 4px 4px;
         max-height: 200px;
         overflow-y: auto;
         z-index: 1000;
         display: none;
       }
-
       .autocomplete-item {
         padding: 10px;
         cursor: pointer;
         border-bottom: 1px solid #eee;
       }
-
       .autocomplete-item:hover {
         background-color: #f0f0f0;
       }
-
       button {
         width: 100%;
         padding: 12px;
@@ -131,47 +141,28 @@
         border-radius: 4px;
         font-size: 16px;
         cursor: pointer;
-        transition: background-color 0.3s;
         margin-bottom: 10px;
       }
-
-      button:hover {
-        background-color: #0056b3;
-      }
-
       .btn-secondary {
         background-color: #28a745;
       }
-
-      .btn-secondary:hover {
-        background-color: #218838;
-      }
-
       .btn-danger {
         background-color: #dc3545;
       }
-
-      .btn-danger:hover {
-        background-color: #c82333;
-      }
-
       #logoutButton {
         width: auto;
         padding: 8px 15px;
         font-size: 14px;
       }
-
       .tracking-status {
         margin-top: 10px;
         padding: 10px;
         background-color: #d4edda;
-        border: 1px solid #c3e6cb;
         border-radius: 4px;
         display: none;
         text-align: center;
         color: #155724;
       }
-
       .location-info {
         margin-top: 20px;
         padding: 15px;
@@ -181,15 +172,12 @@
       }
     </style>
   </head>
-
   <body>
     <div class="container">
       <div class="header-actions">
         <button id="logoutButton" class="btn-danger">Logout</button>
       </div>
-
       <h1>Location Notifier</h1>
-
       <div class="form-group">
         <label for="locationInput">Enter Destination Location:</label>
         <div class="autocomplete-container">
@@ -197,7 +185,8 @@
             <input
               type="text"
               id="locationInput"
-              placeholder="Start typing location name..."
+              placeholder="Start typing location..."
+              autocomplete="off"
             />
             <button id="clearInputBtn" class="clear-input-btn">&times;</button>
             <div class="autocomplete-list" id="autocompleteList"></div>
@@ -205,23 +194,19 @@
           <button id="searchButton" class="search-button">Search</button>
         </div>
       </div>
-
       <button id="getLocationButton" class="btn-secondary">
         Get My Location
       </button>
       <button id="startTrackingButton" class="btn-secondary">
-        Start Location Tracking
+        Start Tracking
       </button>
       <button id="stopTrackingButton" class="btn-danger" style="display: none">
-        Stop Location Tracking
+        Stop Tracking
       </button>
-
       <div class="tracking-status" id="trackingStatus">
-        Location tracking active - sending every 30 seconds
+        Tracking active - updating every 30s
       </div>
-
       <div class="location-info" id="locationInfo">
-        <p><strong>Your Current Location:</strong></p>
         <p>Latitude: <span id="latitude">-</span></p>
         <p>Longitude: <span id="longitude">-</span></p>
       </div>
@@ -230,6 +215,7 @@
     <script>
       let locationInterval = null;
       let autoLogoutTimer = null;
+      let debounceTimer = null;
 
       // 1. ACTIVE SESSION MANAGEMENT
       async function initializeSession() {
@@ -252,13 +238,19 @@
 
         } catch (error) {
           window.location.href = "/static/login.html";
+          return;
         }
+        const data = await response.json();
+        if (autoLogoutTimer) clearTimeout(autoLogoutTimer);
+        autoLogoutTimer = setTimeout(() => {
+          alert("Session expired.");
+          window.location.href = "/static/login.html";
+        }, data.remaining_seconds * 1000);
       }
 
       // 2. RESPONSE HANDLER
       async function handleResponse(response) {
         if (response.status === 401) {
-          alert("Session expired. Please log in again.");
           window.location.href = "/static/login.html";
           return null;
         }
@@ -342,6 +334,7 @@
           document.getElementById("stopTrackingButton").style.display = "none";
           document.getElementById("trackingStatus").style.display = "none";
         }
+        return response.json();
       }
 
       // 6. AUTOCOMPLETE & DESTINATION
@@ -375,23 +368,40 @@
         } catch (error) {
           console.error("Autocomplete error:", error);
         }
+        const response = await fetch("/api/autocomplete_location", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ location_name: query }),
+        });
+        const data = await handleResponse(response);
+        if (!data) return;
+        autocompleteList.innerHTML = "";
+        (data.predictions || []).forEach((p) => {
+          const div = document.createElement("div");
+          div.className = "autocomplete-item";
+          div.textContent = p.description;
+          div.onclick = () => {
+            locationInput.value = p.description;
+            autocompleteList.style.display = "none";
+            setDestination(p.place_id);
+          };
+          autocompleteList.appendChild(div);
+        });
+        autocompleteList.style.display = data.predictions?.length
+          ? "block"
+          : "none";
       }
 
       async function setDestination(placeId) {
-        try {
-          const response = await fetch("/api/set_destination", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ place_id: placeId }),
-          });
-
-          const data = await handleResponse(response);
-          if (data && data.status === "success") {
-            alert("Destination set successfully! Tracking started.");
-            startLocationTracking();
-          }
-        } catch (error) {
-          console.error("Error setting destination:", error);
+        const response = await fetch("/api/set_destination", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ place_id: placeId }),
+        });
+        const data = await handleResponse(response);
+        if (data?.status === "success") {
+          alert("Destination set! Tracking started.");
+          startLocationTracking();
         }
       }
 
@@ -400,17 +410,27 @@
       document.getElementById("stopTrackingButton").onclick = stopLocationTracking;
       document.getElementById("searchButton").onclick = () => performAutocompleteSearch(locationInput.value.trim());
 
-      document.getElementById("getLocationButton").onclick = () => {
-        if (navigator.geolocation) {
+      function startLocationTracking() {
+        if (!navigator.geolocation) return;
+        locationInterval = setInterval(() => {
           navigator.geolocation.getCurrentPosition((pos) => {
             document.getElementById("latitude").textContent = pos.coords.latitude.toFixed(6);
             document.getElementById("longitude").textContent = pos.coords.longitude.toFixed(6);
             document.getElementById("locationInfo").style.display = "block";
           });
-        }
-      };
+        }, 30000);
+        document.getElementById("startTrackingButton").style.display = "none";
+        document.getElementById("stopTrackingButton").style.display = "block";
+        document.getElementById("trackingStatus").style.display = "block";
+      }
 
-      // Initialization
+      function stopLocationTracking() {
+        clearInterval(locationInterval);
+        document.getElementById("startTrackingButton").style.display = "block";
+        document.getElementById("stopTrackingButton").style.display = "none";
+        document.getElementById("trackingStatus").style.display = "none";
+      }
+
       initializeSession();
     </script>
   </body>
